@@ -18,7 +18,7 @@ import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase
 import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,onSnapshot,doc,setDoc,deleteDoc,writeBatch} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 // EDIT: paste your Firebase web app config (Project settings > Your apps)
-const app0=initializeApp({apiKey:"",authDomain:"",projectId:"",appId:""});
+const app0=initializeApp({apiKey:"AIzaSyBlf5sNqXkX8uRVJJY6AOP06-8KB12k0Rw",authDomain:"confidencepool.firebaseapp.com",projectId:"confidencepool",appId:"1:78808055615:web:25dfc863808ed3e117dd8a"});
 const auth=getAuth(app0),db=getFirestore(app0),$=s=>document.querySelector(s),A=$("#app");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 let me,games=[],picks=[],names={},tab="standings",week=1;
