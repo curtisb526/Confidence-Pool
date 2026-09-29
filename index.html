@@ -43,8 +43,8 @@ function render(){if(!me)return;
   if(tab==="standings"){const r=Object.entries(totals()).sort((a,b)=>b[1]-a[1]);
     h+=r.map(([u,p],i)=>`<div class="card row"><div><div class="mu">#${i+1}</div><b>${esc(names[u]||"Player")}</b></div><div class="big">${p}</div></div>`).join("")}
   else{const gs=games.filter(g=>g.week===week).sort((a,b)=>kms(a)-kms(b)),m=mine();
-    h+=`<div class="row" style="margin-bottom:10px"><b>Week</b><select onchange="setWeek(this.value)">${ws.map(w=>`<option ${w===week?"selected":""}>${w}</option>`).join("")}</select></div>`;
-    if(!gs.length)h+=`<div class="card mu">No lines yet for this week.</div>`;
+    h+=`<div style="margin-bottom:10px"><b>Week ${week}</b></div>`;
+           if(!gs.length)h+=`<div class="card mu">No lines yet for this week.</div>`;
     h+=`<div class="mu" style="margin-bottom:8px">${Object.keys(m).length}/3 picks. Use 5, 3 and 1 once each. Editable until kickoff.</div>`;
     for(const g of gs){const lk=locked(g),p=m[g.id],r=p&&res(g,p);
       h+=`<div class="card"><div class="row mu"><span>${esc(new Date(kms(g)).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"}))}</span><span>${g.completed?`Final ${g.aScore}-${g.hScore}`:lk?"🔒 locked":""}</span></div>
