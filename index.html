@@ -12,21 +12,44 @@ nav button{flex:1;font-weight:600}nav .on,.btn,.pts .on{background:var(--ac);col
 .side{flex:1;font-weight:600;background:transparent;border-width:1.5px}.side.sel{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 14%,transparent)}
 .side:disabled{opacity:.6;cursor:default}.pts{display:flex;gap:6px;margin-top:8px;align-items:center}.pts button{width:38px;padding:6px;font-weight:700}
 .big{font-size:28px;font-weight:700}.hit{color:var(--ac);font-weight:700}.miss{color:#d92d20;font-weight:700}
+.hg{display:grid;gap:4px;margin-top:8px;font-size:13px}.hh{font-weight:700;text-align:center}.hl{align-self:center}
+.hc{padding:6px 4px;border:1px solid var(--bd);border-radius:6px;text-align:center}
+.hitbg{background:color-mix(in srgb,var(--ac) 25%,transparent)}.tot{font-weight:700;background:color-mix(in srgb,#f5d90a 30%,transparent)}
 </style></head><body><main><div class="row"><h1>🏈 NFL Pick'em</h1><button class="btn" id="out" hidden>Sign out</button></div><div id="app"></div></main>
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {getFirestore,collection,onSnapshot,doc,setDoc,deleteDoc,writeBatch} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-// EDIT: paste your Firebase web app config (Project settings > Your apps)
 const app0=initializeApp({apiKey:"AIzaSyBlf5sNqXkX8uRVJJY6AOP06-8KB12k0Rw",authDomain:"confidencepool.firebaseapp.com",projectId:"confidencepool",appId:"1:78808055615:web:25dfc863808ed3e117dd8a"});
 const auth=getAuth(app0),db=getFirestore(app0),$=s=>document.querySelector(s),A=$("#app");
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
 let me,games=[],picks=[],names={},tab="standings",week=1;
+// ---- Backfilled results (weeks 1-3). Each pick is [label, hit?] in 5/3/1 point order. ----
+const PLAYERS=["Curtis","Eamonn","Steven"],PTS=[5,3,1];
+const HIST={
+1:{Curtis:[["Cowboys -3",0],["Ravens -3",1],["Packers +1.5",0]],Eamonn:[["Broncos +2.5",0],["Buccaneers +4",0],["Panthers +3",0]],Steven:[["Cowboys -3",0],["Ravens -3",1],["Texans +1",0]]},
+2:{Curtis:[["Packers -3",0],["Panthers -2.5",1],["Bengals +2.5",1]],Eamonn:[["Commies +4",0],["Jaguars +3",0],["Texans -2.5",0]],Steven:[["Saints +8.5",1],["Packers -3",0],["Bucs -7.5",0]]},
+3:{Curtis:[["49ers -7.5",0],["Chiefs -10.5",1],["Bucs +1",0]],Eamonn:[["Panthers -1.5",0],["Packers -4.5",0],["Seahawks -8.5",0]],Steven:[["Bucs +1",0],["Ravens -3.5",0],["Lions -6.5",1]]}};
+// Maps a signed-in Google account to a player by the first name on the account. Add aliases here if a name doesn't match.
+const who=uid=>{const n=(names[uid]||"").toLowerCase();return PLAYERS.find(p=>n.startsWith(p.toLowerCase()))||names[uid]||"Player"};
 const short=n=>n.split(" ").pop(),fs=n=>n>0?"+"+n:n===0?"PK":""+n;
 const kms=g=>g.kickoff.toMillis(),locked=g=>Date.now()>=kms(g);
 const label=(g,s)=>short(s==="home"?g.home:g.away)+" "+fs(s==="home"?g.spread:-g.spread);
 function res(g,p){if(!g.completed)return null;const m=g.hScore-g.aScore+g.spread,v=p.side==="home"?m:-m;return v>0?"hit":v<0?"miss":"push"}
-function totals(){const t={};for(const p of picks){t[p.uid]??=0;const g=games.find(x=>x.id===p.gameId);if(g&&res(g,p)==="hit")t[p.uid]+=p.pts}if(me&&!(me.uid in t))t[me.uid]=0;return t}
+function totals(){const t={};PLAYERS.forEach(p=>t[p]=0);
+  for(const w in HIST)for(const p in HIST[w])HIST[w][p].forEach(([_,hit],i)=>{if(hit)t[p]+=PTS[i]});
+  for(const p of picks){if(HIST[p.week])continue;const g=games.find(x=>x.id===p.gameId);if(g&&res(g,p)==="hit"){const n=who(p.uid);t[n]=(t[n]||0)+p.pts}}
+  if(me){const n=who(me.uid);t[n]??=0}return t}
+function histData(){const H={};
+  for(const w in HIST){H[w]={};for(const p in HIST[w])H[w][p]=HIST[w][p].map(([l,x])=>[l,!!x])}
+  for(const p of picks){if(HIST[p.week])continue;const g=games.find(x=>x.id===p.gameId);if(!g||!locked(g))continue; // others' picks show only after kickoff
+    const n=who(p.uid),r=res(g,p);((H[p.week]??={})[n]??=[null,null,null])[PTS.indexOf(p.pts)]=[label(g,p.side),r==="hit"?true:r===null?null:false]}
+  return H}
+function vHist(){const H=histData(),ws=Object.keys(H).map(Number).sort((a,b)=>b-a);
+  return ws.map(w=>{const ps=[...PLAYERS,...Object.keys(H[w]).filter(p=>!PLAYERS.includes(p))];
+    const cell=x=>x?`<div class="hc ${x[1]===true?"hitbg":""}">${esc(x[0])}${x[1]===null?' <span class="mu">…</span>':""}</div>`:`<div class="hc mu">–</div>`;
+    const tot=p=>(H[w][p]||[]).reduce((s,x,i)=>s+(x&&x[1]===true?PTS[i]:0),0);
+    return `<div class="card"><b>Week ${w}</b><div class="hg" style="grid-template-columns:auto repeat(${ps.length},1fr)"><div></div>${ps.map(p=>`<div class="hh">${esc(p)}</div>`).join("")}${PTS.map((pt,i)=>`<div class="mu hl">${pt} pt</div>${ps.map(p=>cell((H[w][p]||[])[i])).join("")}`).join("")}<div class="mu hl">Total</div>${ps.map(p=>`<div class="hc tot">${tot(p)}</div>`).join("")}</div></div>`}).join("")||'<div class="card mu">No past picks yet.</div>'}
 const mine=()=>Object.fromEntries(picks.filter(p=>p.uid===me.uid&&p.week===week).map(p=>[p.gameId,p]));
 const pd=(g,side,pts)=>({week:g.week,gameId:g.id,uid:me.uid,side,pts});
 const pref=gid=>doc(db,"picks",gid+"_"+me.uid);
@@ -36,15 +59,15 @@ window.pick=async(gid,side)=>{const g=games.find(x=>x.id===gid),m=mine(),p=m[gid
   else{const f=[5,3,1].find(n=>!Object.values(m).some(x=>x.pts===n));if(!f)return alert("5, 3 and 1 are all used. Clear a pick first.");await setDoc(pref(gid),pd(g,side,f))}}catch(e){err(e)}};
 window.setPts=async(gid,n)=>{const g=games.find(x=>x.id===gid),m=mine(),o=Object.values(m).find(x=>x.pts===n&&x.gameId!==gid),b=writeBatch(db);
   if(o)b.set(pref(o.gameId),pd(games.find(x=>x.id===o.gameId),o.side,m[gid].pts));b.set(pref(gid),pd(g,m[gid].side,n));try{await b.commit()}catch(e){err(e)}};
-window.setTab=t=>{tab=t;render()};window.setWeek=w=>{week=+w;render()};
+window.setTab=t=>{tab=t;render()};
 function render(){if(!me)return;
-  const ws=[...new Set([...games.map(g=>g.week),week])].sort((a,b)=>a-b);
-  let h=`<nav>${[["standings","Standings"],["picks","Picks"]].map(([k,v])=>`<button class="${tab===k?"on":""}" onclick="setTab('${k}')">${v}</button>`).join("")}</nav>`;
+  let h=`<nav>${[["standings","Standings"],["picks","Picks"],["history","History"]].map(([k,v])=>`<button class="${tab===k?"on":""}" onclick="setTab('${k}')">${v}</button>`).join("")}</nav>`;
   if(tab==="standings"){const r=Object.entries(totals()).sort((a,b)=>b[1]-a[1]);
-    h+=r.map(([u,p],i)=>`<div class="card row"><div><div class="mu">#${i+1}</div><b>${esc(names[u]||"Player")}</b></div><div class="big">${p}</div></div>`).join("")}
+    h+=r.map(([n,p],i)=>`<div class="card row"><div><div class="mu">#${i+1}</div><b>${esc(n)}</b></div><div class="big">${p}</div></div>`).join("")}
+  else if(tab==="history")h+=vHist();
   else{const gs=games.filter(g=>g.week===week).sort((a,b)=>kms(a)-kms(b)),m=mine();
     h+=`<div style="margin-bottom:10px"><b>Week ${week}</b></div>`;
-           if(!gs.length)h+=`<div class="card mu">No lines yet for this week.</div>`;
+    if(!gs.length)h+=`<div class="card mu">No lines yet for this week.</div>`;
     h+=`<div class="mu" style="margin-bottom:8px">${Object.keys(m).length}/3 picks. Use 5, 3 and 1 once each. Editable until kickoff.</div>`;
     for(const g of gs){const lk=locked(g),p=m[g.id],r=p&&res(g,p);
       h+=`<div class="card"><div class="row mu"><span>${esc(new Date(kms(g)).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"}))}</span><span>${g.completed?`Final ${g.aScore}-${g.hScore}`:lk?"🔒 locked":""}</span></div>
@@ -58,5 +81,5 @@ onAuthStateChanged(auth,u=>{me=u;$("#out").hidden=!u;
   onSnapshot(collection(db,"users"),s=>{s.docs.forEach(d=>names[d.id]=d.data().name);render()},err);
   onSnapshot(collection(db,"games"),s=>{games=s.docs.map(d=>({id:d.id,...d.data()}));
     if(games.length){const open=games.filter(g=>!g.completed).map(g=>g.week);week=open.length?Math.min(...open):Math.max(...games.map(g=>g.week))}render()},err);
-                                          onSnapshot(collection(db,"picks"),s=>{picks=s.docs.map(d=>d.data());render()},err);setInterval(render,30000)});
+  onSnapshot(collection(db,"picks"),s=>{picks=s.docs.map(d=>d.data());render()},err);setInterval(render,30000)});
 </script></body></html>
