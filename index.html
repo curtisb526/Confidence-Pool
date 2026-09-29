@@ -1,0 +1,62 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>NFL Pick'em</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#14171c;--mu:#6b7280;--bd:#e3e6ea;--ac:#0b6b3a;--acx:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1214;--card:#181c20;--tx:#eceff2;--mu:#98a1ab;--bd:#2a3036;--ac:#3fbf78;--acx:#08150e}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}h1{font-size:20px}
+nav{display:flex;gap:6px;margin-bottom:12px}nav button,.side,.pts button,.btn,select{font:inherit;cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:10px;padding:10px}
+nav button{flex:1;font-weight:600}nav .on,.btn,.pts .on{background:var(--ac);color:var(--acx);border-color:var(--ac)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}.mu{color:var(--mu);font-size:13px}
+.side{flex:1;font-weight:600;background:transparent;border-width:1.5px}.side.sel{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 14%,transparent)}
+.side:disabled{opacity:.6;cursor:default}.pts{display:flex;gap:6px;margin-top:8px;align-items:center}.pts button{width:38px;padding:6px;font-weight:700}
+.big{font-size:28px;font-weight:700}.hit{color:var(--ac);font-weight:700}.miss{color:#d92d20;font-weight:700}
+</style></head><body><main><div class="row"><h1>🏈 NFL Pick'em</h1><button class="btn" id="out" hidden>Sign out</button></div><div id="app"></div></main>
+<script type="module">
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,GoogleAuthProvider,signInWithPopup,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,collection,onSnapshot,doc,setDoc,deleteDoc,writeBatch} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+// EDIT: paste your Firebase web app config (Project settings > Your apps)
+const app0=initializeApp({apiKey:"",authDomain:"",projectId:"",appId:""});
+const auth=getAuth(app0),db=getFirestore(app0),$=s=>document.querySelector(s),A=$("#app");
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>"&#"+c.charCodeAt(0)+";");
+let me,games=[],picks=[],names={},tab="standings",week=1;
+const short=n=>n.split(" ").pop(),fs=n=>n>0?"+"+n:n===0?"PK":""+n;
+const kms=g=>g.kickoff.toMillis(),locked=g=>Date.now()>=kms(g);
+const label=(g,s)=>short(s==="home"?g.home:g.away)+" "+fs(s==="home"?g.spread:-g.spread);
+function res(g,p){if(!g.completed)return null;const m=g.hScore-g.aScore+g.spread,v=p.side==="home"?m:-m;return v>0?"hit":v<0?"miss":"push"}
+function totals(){const t={};for(const p of picks){t[p.uid]??=0;const g=games.find(x=>x.id===p.gameId);if(g&&res(g,p)==="hit")t[p.uid]+=p.pts}if(me&&!(me.uid in t))t[me.uid]=0;return t}
+const mine=()=>Object.fromEntries(picks.filter(p=>p.uid===me.uid&&p.week===week).map(p=>[p.gameId,p]));
+const pd=(g,side,pts)=>({week:g.week,gameId:g.id,uid:me.uid,side,pts});
+const pref=gid=>doc(db,"picks",gid+"_"+me.uid);
+const err=e=>alert(/permission/i.test(e.message)?"Locked or not allowed.":e.message);
+window.pick=async(gid,side)=>{const g=games.find(x=>x.id===gid),m=mine(),p=m[gid];if(locked(g))return;
+  try{if(p?.side===side)await deleteDoc(pref(gid));else if(p)await setDoc(pref(gid),pd(g,side,p.pts));
+  else{const f=[5,3,1].find(n=>!Object.values(m).some(x=>x.pts===n));if(!f)return alert("5, 3 and 1 are all used. Clear a pick first.");await setDoc(pref(gid),pd(g,side,f))}}catch(e){err(e)}};
+window.setPts=async(gid,n)=>{const g=games.find(x=>x.id===gid),m=mine(),o=Object.values(m).find(x=>x.pts===n&&x.gameId!==gid),b=writeBatch(db);
+  if(o)b.set(pref(o.gameId),pd(games.find(x=>x.id===o.gameId),o.side,m[gid].pts));b.set(pref(gid),pd(g,m[gid].side,n));try{await b.commit()}catch(e){err(e)}};
+window.setTab=t=>{tab=t;render()};window.setWeek=w=>{week=+w;render()};
+function render(){if(!me)return;
+  const ws=[...new Set([...games.map(g=>g.week),week])].sort((a,b)=>a-b);
+  let h=`<nav>${[["standings","Standings"],["picks","Picks"]].map(([k,v])=>`<button class="${tab===k?"on":""}" onclick="setTab('${k}')">${v}</button>`).join("")}</nav>`;
+  if(tab==="standings"){const r=Object.entries(totals()).sort((a,b)=>b[1]-a[1]);
+    h+=r.map(([u,p],i)=>`<div class="card row"><div><div class="mu">#${i+1}</div><b>${esc(names[u]||"Player")}</b></div><div class="big">${p}</div></div>`).join("")}
+  else{const gs=games.filter(g=>g.week===week).sort((a,b)=>kms(a)-kms(b)),m=mine();
+    h+=`<div class="row" style="margin-bottom:10px"><b>Week</b><select onchange="setWeek(this.value)">${ws.map(w=>`<option ${w===week?"selected":""}>${w}</option>`).join("")}</select></div>`;
+    if(!gs.length)h+=`<div class="card mu">No lines yet for this week.</div>`;
+    h+=`<div class="mu" style="margin-bottom:8px">${Object.keys(m).length}/3 picks. Use 5, 3 and 1 once each. Editable until kickoff.</div>`;
+    for(const g of gs){const lk=locked(g),p=m[g.id],r=p&&res(g,p);
+      h+=`<div class="card"><div class="row mu"><span>${esc(new Date(kms(g)).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"}))}</span><span>${g.completed?`Final ${g.aScore}-${g.hScore}`:lk?"🔒 locked":""}</span></div>
+      <div class="row" style="margin-top:8px">${["away","home"].map(s=>`<button class="side ${p?.side===s?"sel":""}" ${lk?"disabled":""} onclick="pick('${g.id}','${s}')">${esc(label(g,s))}</button>`).join("")}</div>
+      ${p?`<div class="pts"><span class="mu">Points</span>${[5,3,1].map(n=>`<button class="${p.pts===n?"on":""}" ${lk?"disabled":""} onclick="setPts('${g.id}',${n})">${n}</button>`).join("")}${r?`<span class="${r==="hit"?"hit":r==="miss"?"miss":"mu"}" style="margin-left:auto">${r==="hit"?"HIT +"+p.pts:r.toUpperCase()}</span>`:""}</div>`:""}</div>`}}
+  A.innerHTML=h}
+$("#out").onclick=()=>signOut(auth);
+onAuthStateChanged(auth,u=>{me=u;$("#out").hidden=!u;
+  if(!u){A.innerHTML='<div class="card"><p>Sign in with your Gmail to play.</p><button class="btn" id="in">Sign in with Google</button></div>';$("#in").onclick=()=>signInWithPopup(auth,new GoogleAuthProvider()).catch(err);return}
+  setDoc(doc(db,"users",u.uid),{name:u.displayName||u.email});
+  onSnapshot(collection(db,"users"),s=>{s.docs.forEach(d=>names[d.id]=d.data().name);render()},err);
+  onSnapshot(collection(db,"games"),s=>{games=s.docs.map(d=>({id:d.id,...d.data()}));
+    if(!games.some(g=>g.week===week)&&games.length){const up=games.filter(g=>!locked(g)).map(g=>g.week);week=up.length?Math.min(...up):Math.max(...games.map(g=>g.week))}render()},err);
+  onSnapshot(collection(db,"picks"),s=>{picks=s.docs.map(d=>d.data());render()},err);setInterval(render,30000)});
+</script></body></html>
