@@ -1,7 +1,7 @@
 name: Sync NFL odds
 on:
-  schedule: [{ cron: "5 0-1,10-23 * * *" }]   # hourly window; the gate step below decides (Eastern time)
-  workflow_dispatch: {}                        # manual "Run workflow" always runs
+  schedule: [{ cron: "5 * * * *" }]   # hourly check; the gate step below decides (Eastern time)
+  workflow_dispatch: {}                # manual "Run workflow" always runs
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -14,6 +14,7 @@ jobs:
             2|3|5) [ "$h" = "10" ] && go=true ;;                                   # Tue, Wed, Fri: 10am
             1|4|6|7) case $h in 6|8|10|12|14|16|18|20) go=true ;; esac ;;          # Mon, Thu, Sat, Sun: 6am-8pm every 2h
           esac
+          case "$d-$h" in 7-23|1-23|4-23|1-0|2-0|5-0) go=true ;; esac             # late-night score checks: 11pm and midnight after Sun, Mon, Thu games
           echo "go=$go" >> $GITHUB_OUTPUT
       - if: steps.gate.outputs.go == 'true'
         uses: actions/checkout@v4
