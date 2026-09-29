@@ -37,8 +37,8 @@ const ABBR={Cardinals:"ari",Falcons:"atl",Ravens:"bal",Bills:"buf",Panthers:"car
 const logo=n=>{const a=ABBR[n.split(" ").pop()];return a?`<img class="lg" alt="" src="https://a.espncdn.com/i/teamlogos/nfl/500/${a}.png" onerror="this.remove()">`:""};
 const short=n=>n.split(" ").pop(),fs=n=>n>0?"+"+n:n===0?"PK":""+n;
 const kms=g=>g.kickoff.toMillis(),locked=g=>Date.now()>=kms(g);
-const label=(g,s)=>short(s==="home"?g.home:g.away)+" "+fs(s==="home"?g.spread:-g.spread);
-function res(g,p){if(!g.completed)return null;const m=g.hScore-g.aScore+g.spread,v=p.side==="home"?m:-m;return v>0?"hit":v<0?"miss":"push"}
+const label=(g,s,L=g.spread)=>short(s==="home"?g.home:g.away)+" "+fs(s==="home"?L:-L);
+function res(g,p){if(!g.completed)return null;const m=g.hScore-g.aScore+(p.line??g.spread),v=p.side==="home"?m:-m;return v>0?"hit":v<0?"miss":"push"}
 function totals(){const t={};PLAYERS.forEach(p=>t[p]=0);
   for(const w in HIST)for(const p in HIST[w])HIST[w][p].forEach(([_,hit],i)=>{if(hit)t[p]+=PTS[i]});
   for(const p of picks){if(HIST[p.week])continue;const g=games.find(x=>x.id===p.gameId);if(g&&res(g,p)==="hit"){const n=who(p.uid);t[n]=(t[n]||0)+p.pts}}
@@ -46,7 +46,7 @@ function totals(){const t={};PLAYERS.forEach(p=>t[p]=0);
 function histData(){const H={};
   for(const w in HIST){H[w]={};for(const p in HIST[w])H[w][p]=HIST[w][p].map(([l,x])=>[l,!!x])}
   for(const p of picks){if(HIST[p.week])continue;const g=games.find(x=>x.id===p.gameId);if(!g||!locked(g))continue; // others' picks show only after kickoff
-    const n=who(p.uid),r=res(g,p);((H[p.week]??={})[n]??=[null,null,null])[PTS.indexOf(p.pts)]=[label(g,p.side),r==="hit"?true:r===null?null:false]}
+    const n=who(p.uid),r=res(g,p);((H[p.week]??={})[n]??=[null,null,null])[PTS.indexOf(p.pts)]=[label(g,p.side,p.line??g.spread),r==="hit"?true:r===null?null:false]}
   return H}
 function vHist(){const H=histData(),ws=Object.keys(H).map(Number).sort((a,b)=>b-a);
   return ws.map(w=>{const ps=[...PLAYERS,...Object.keys(H[w]).filter(p=>!PLAYERS.includes(p))];
@@ -54,14 +54,14 @@ function vHist(){const H=histData(),ws=Object.keys(H).map(Number).sort((a,b)=>b-
     const tot=p=>(H[w][p]||[]).reduce((s,x,i)=>s+(x&&x[1]===true?PTS[i]:0),0);
     return `<div class="card"><b>Week ${w}</b><div class="hg" style="grid-template-columns:auto repeat(${ps.length},1fr)"><div></div>${ps.map(p=>`<div class="hh">${esc(p)}</div>`).join("")}${PTS.map((pt,i)=>`<div class="mu hl">${pt} pt</div>${ps.map(p=>cell((H[w][p]||[])[i])).join("")}`).join("")}<div class="mu hl">Total</div>${ps.map(p=>`<div class="hc tot">${tot(p)}</div>`).join("")}</div></div>`}).join("")||'<div class="card mu">No past picks yet.</div>'}
 const mine=()=>Object.fromEntries(picks.filter(p=>p.uid===me.uid&&p.week===week).map(p=>[p.gameId,p]));
-const pd=(g,side,pts)=>({week:g.week,gameId:g.id,uid:me.uid,side,pts});
+const pd=(g,side,pts,line=g.spread)=>({week:g.week,gameId:g.id,uid:me.uid,side,pts,line}); // line = home spread when the pick was made
 const pref=gid=>doc(db,"picks",gid+"_"+me.uid);
 const err=e=>alert(/permission/i.test(e.message)?"Locked or not allowed.":e.message);
 window.pick=async(gid,side)=>{const g=games.find(x=>x.id===gid),m=mine(),p=m[gid];if(locked(g))return;
   try{if(p?.side===side)await deleteDoc(pref(gid));else if(p)await setDoc(pref(gid),pd(g,side,p.pts));
   else{const f=[5,3,1].find(n=>!Object.values(m).some(x=>x.pts===n));if(!f)return alert("5, 3 and 1 are all used. Clear a pick first.");await setDoc(pref(gid),pd(g,side,f))}}catch(e){err(e)}};
 window.setPts=async(gid,n)=>{const g=games.find(x=>x.id===gid),m=mine(),o=Object.values(m).find(x=>x.pts===n&&x.gameId!==gid),b=writeBatch(db);
-  if(o)b.set(pref(o.gameId),pd(games.find(x=>x.id===o.gameId),o.side,m[gid].pts));b.set(pref(gid),pd(g,m[gid].side,n));try{await b.commit()}catch(e){err(e)}};
+  if(o){const og=games.find(x=>x.id===o.gameId);b.set(pref(o.gameId),pd(og,o.side,m[gid].pts,o.line??og.spread))}b.set(pref(gid),pd(g,m[gid].side,n,m[gid].line??g.spread));try{await b.commit()}catch(e){err(e)}};
 window.setTab=t=>{tab=t;render()};
 function render(){if(!me)return;
   let h=`<nav>${[["standings","Standings"],["picks","Picks"],["history","History"]].map(([k,v])=>`<button class="${tab===k?"on":""}" onclick="setTab('${k}')">${v}</button>`).join("")}</nav>`;
@@ -75,6 +75,7 @@ function render(){if(!me)return;
     for(const g of gs){const lk=locked(g),p=m[g.id],r=p&&res(g,p);
       h+=`<div class="card"><div class="row mu"><span>${esc(new Date(kms(g)).toLocaleString([],{weekday:"short",hour:"numeric",minute:"2-digit"}))}</span><span>${g.completed?`Final ${g.aScore}-${g.hScore}`:lk?"🔒 locked":""}</span></div>
       <div class="row" style="margin-top:8px">${["away","home"].map(s=>`<button class="side ${p?.side===s?"sel":""}" ${lk?"disabled":""} onclick="pick('${g.id}','${s}')">${logo(s==="home"?g.home:g.away)}${esc(label(g,s))}</button>`).join("")}</div>
+      ${p&&p.line!=null&&p.line!==g.spread?`<div class="mu" style="margin-top:6px">Your pick is locked at ${esc(label(g,p.side,p.line))}</div>`:""}
       ${p?`<div class="pts"><span class="mu">Points</span>${[5,3,1].map(n=>`<button class="${p.pts===n?"on":""}" ${lk?"disabled":""} onclick="setPts('${g.id}',${n})">${n}</button>`).join("")}${r?`<span class="${r==="hit"?"hit":r==="miss"?"miss":"mu"}" style="margin-left:auto">${r==="hit"?"HIT +"+p.pts:r.toUpperCase()}</span>`:""}</div>`:""}</div>`}}
   A.innerHTML=h}
 $("#out").onclick=()=>signOut(auth);
