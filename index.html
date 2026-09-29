@@ -57,6 +57,6 @@ onAuthStateChanged(auth,u=>{me=u;$("#out").hidden=!u;
   setDoc(doc(db,"users",u.uid),{name:u.displayName||u.email});
   onSnapshot(collection(db,"users"),s=>{s.docs.forEach(d=>names[d.id]=d.data().name);render()},err);
   onSnapshot(collection(db,"games"),s=>{games=s.docs.map(d=>({id:d.id,...d.data()}));
-    if(!games.some(g=>g.week===week)&&games.length){const up=games.filter(g=>!locked(g)).map(g=>g.week);week=up.length?Math.min(...up):Math.max(...games.map(g=>g.week))}render()},err);
-  onSnapshot(collection(db,"picks"),s=>{picks=s.docs.map(d=>d.data());render()},err);setInterval(render,30000)});
+    if(games.length){const open=games.filter(g=>!g.completed).map(g=>g.week);week=open.length?Math.min(...open):Math.max(...games.map(g=>g.week))}render()},err);
+                                          onSnapshot(collection(db,"picks"),s=>{picks=s.docs.map(d=>d.data());render()},err);setInterval(render,30000)});
 </script></body></html>
