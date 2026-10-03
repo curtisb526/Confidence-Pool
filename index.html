@@ -48,25 +48,42 @@ function histData(){const H={};
   for(const p of picks){if(HIST[p.week])continue;const g=games.find(x=>x.id===p.gameId);if(!g||!locked(g))continue; // others' picks show only after kickoff
     const n=who(p.uid),r=res(g,p);((H[p.week]??={})[n]??=[null,null,null])[PTS.indexOf(p.pts)]=[label(g,p.side,p.line??g.spread),r==="hit"?true:r===null?null:false]}
   return H}
+function gridCard(title,Hw,note){const ps=[...PLAYERS,...Object.keys(Hw).filter(p=>!PLAYERS.includes(p))];
+  const cell=x=>x?`<div class="hc ${x[1]===true?"hitbg":""}">${esc(x[0])}${x[1]===null?' <span class="mu">…</span>':""}</div>`:`<div class="hc mu">–</div>`;
+  const tot=p=>(Hw[p]||[]).reduce((s,x,i)=>s+(x&&x[1]===true?PTS[i]:0),0);
+  return `<div class="card"><b>${title}</b>${note?`<div class="mu">${note}</div>`:""}<div class="hg" style="grid-template-columns:auto repeat(${ps.length},1fr)"><div></div>${ps.map(p=>`<div class="hh">${esc(p)}</div>`).join("")}${PTS.map((pt,i)=>`<div class="mu hl">${pt} pt</div>${ps.map(p=>cell((Hw[p]||[])[i])).join("")}`).join("")}<div class="mu hl">Total</div>${ps.map(p=>`<div class="hc tot">${tot(p)}</div>`).join("")}</div></div>`}
 function vHist(){const H=histData(),ws=Object.keys(H).map(Number).sort((a,b)=>b-a);
-  return ws.map(w=>{const ps=[...PLAYERS,...Object.keys(H[w]).filter(p=>!PLAYERS.includes(p))];
-    const cell=x=>x?`<div class="hc ${x[1]===true?"hitbg":""}">${esc(x[0])}${x[1]===null?' <span class="mu">…</span>':""}</div>`:`<div class="hc mu">–</div>`;
-    const tot=p=>(H[w][p]||[]).reduce((s,x,i)=>s+(x&&x[1]===true?PTS[i]:0),0);
-    return `<div class="card"><b>Week ${w}</b><div class="hg" style="grid-template-columns:auto repeat(${ps.length},1fr)"><div></div>${ps.map(p=>`<div class="hh">${esc(p)}</div>`).join("")}${PTS.map((pt,i)=>`<div class="mu hl">${pt} pt</div>${ps.map(p=>cell((H[w][p]||[])[i])).join("")}`).join("")}<div class="mu hl">Total</div>${ps.map(p=>`<div class="hc tot">${tot(p)}</div>`).join("")}</div></div>`}).join("")||'<div class="card mu">No past picks yet.</div>'}
+  return ws.map(w=>gridCard("Week "+w,H[w])).join("")||'<div class="card mu">No past picks yet.</div>'}
+// ---- Reveal rules (Eastern time) ----
+const ETF=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",weekday:"short"});
+const etp=ms=>Object.fromEntries(ETF.formatToParts(ms).map(x=>[x.type,x.value]));
+const sunYmd=w=>{const s=games.filter(g=>g.week===w).map(g=>etp(kms(g))).filter(x=>x.weekday==="Sun").map(x=>`${x.year}-${x.month}-${x.day}`).sort()[0];
+  return s||new Date(Date.UTC(2026,8,8,12)+((w-1)*7+5)*864e5).toISOString().slice(0,10)};
+const HF=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",hour12:false});
+const et=(ymd,h)=>{for(const o of["-04:00","-05:00"]){const t=new Date(`${ymd}T${String(h).padStart(2,"0")}:00:00${o}`);if(+HF.format(t)%24===h)return t.getTime()}};
+function revealAt(p){const g=games.find(x=>x.id===p.gameId);if(!g)return Infinity;
+  const y=sunYmd(p.week),s1=et(y,13),s4=et(y,16),k=kms(g);
+  if(k<s1)return k;                                  // Thursday (or any pre-Sunday-1pm game): shown at that game's kickoff
+  const at=p.at??0;return Math.min(k,at<s1?s1:Math.max(at,s4))} // made before Sun 1pm: shown 1pm; made later: shown 4pm (or right away after 4pm)
+const visible=p=>p.uid===me.uid||Date.now()>=revealAt(p);
+function liveGrid(){const Hw={};
+  for(const p of picks){if(p.week!==week||!visible(p))continue;const g=games.find(x=>x.id===p.gameId);if(!g)continue;
+    const r=res(g,p);(Hw[who(p.uid)]??=[null,null,null])[PTS.indexOf(p.pts)]=[label(g,p.side,p.line??g.spread),r==="hit"?true:r===null?null:false]}
+  return gridCard(`Week ${week} picks`,Hw,"Thursday picks show at kickoff. Other picks show Sunday 1pm ET; picks made after 1pm show at 4pm.")}
 const mine=()=>Object.fromEntries(picks.filter(p=>p.uid===me.uid&&p.week===week).map(p=>[p.gameId,p]));
-const pd=(g,side,pts,line=g.spread)=>({week:g.week,gameId:g.id,uid:me.uid,side,pts,line}); // line = home spread when the pick was made
+const pd=(g,side,pts,line=g.spread,at=Date.now())=>({week:g.week,gameId:g.id,uid:me.uid,side,pts,line,at}); // line = home spread when picked; at = when first picked (used for reveal timing)
 const pref=gid=>doc(db,"picks",gid+"_"+me.uid);
 const err=e=>alert(/permission/i.test(e.message)?"Locked or not allowed.":e.message);
 window.pick=async(gid,side)=>{const g=games.find(x=>x.id===gid),m=mine(),p=m[gid];if(locked(g))return;
-  try{if(p?.side===side)await deleteDoc(pref(gid));else if(p)await setDoc(pref(gid),pd(g,side,p.pts));
+  try{if(p?.side===side)await deleteDoc(pref(gid));else if(p)await setDoc(pref(gid),pd(g,side,p.pts,undefined,p.at));
   else{const f=[5,3,1].find(n=>!Object.values(m).some(x=>x.pts===n));if(!f)return alert("5, 3 and 1 are all used. Clear a pick first.");await setDoc(pref(gid),pd(g,side,f))}}catch(e){err(e)}};
 window.setPts=async(gid,n)=>{const g=games.find(x=>x.id===gid),m=mine(),o=Object.values(m).find(x=>x.pts===n&&x.gameId!==gid),b=writeBatch(db);
-  if(o){const og=games.find(x=>x.id===o.gameId);b.set(pref(o.gameId),pd(og,o.side,m[gid].pts,o.line??og.spread))}b.set(pref(gid),pd(g,m[gid].side,n,m[gid].line??g.spread));try{await b.commit()}catch(e){err(e)}};
+  if(o){const og=games.find(x=>x.id===o.gameId);b.set(pref(o.gameId),pd(og,o.side,m[gid].pts,o.line??og.spread,o.at))}b.set(pref(gid),pd(g,m[gid].side,n,m[gid].line??g.spread,m[gid].at));try{await b.commit()}catch(e){err(e)}};
 window.setTab=t=>{tab=t;render()};
 function render(){if(!me)return;
   let h=`<nav>${[["standings","Standings"],["picks","Picks"],["history","History"]].map(([k,v])=>`<button class="${tab===k?"on":""}" onclick="setTab('${k}')">${v}</button>`).join("")}</nav>`;
   if(tab==="standings"){const r=Object.entries(totals()).sort((a,b)=>b[1]-a[1]);
-    h+=r.map(([n,p],i)=>`<div class="card row"><div><div class="mu">${['🥇','🥈','🥉'][r.findIndex(x=>x[1]===p)]||'#'+(i+1)}</div><b>${esc(n)}</b></div><div class="big">${p}</div></div>`).join("")}
+    h+=r.map(([n,p],i)=>`<div class="card row"><div><div class="mu">${['🥇','🥈','🥉'][r.findIndex(x=>x[1]===p)]||'#'+(i+1)}</div><b>${esc(n)}</b></div><div class="big">${p}</div></div>`).join("")+liveGrid()}
   else if(tab==="history")h+=vHist();
   else{const gs=games.filter(g=>g.week===week).sort((a,b)=>kms(a)-kms(b)),m=mine();
     h+=`<div style="margin-bottom:10px"><b>Week ${week}</b></div>`;
