@@ -80,7 +80,9 @@ window.pick=async(gid,side)=>{const g=games.find(x=>x.id===gid),m=mine(),p=m[gid
 window.setPts=async(gid,n)=>{const g=games.find(x=>x.id===gid),m=mine(),o=Object.values(m).find(x=>x.pts===n&&x.gameId!==gid),b=writeBatch(db);
   if(o){const og=games.find(x=>x.id===o.gameId);b.set(pref(o.gameId),pd(og,o.side,m[gid].pts,o.line??og.spread,o.at))}b.set(pref(gid),pd(g,m[gid].side,n,m[gid].line??g.spread,m[gid].at));try{await b.commit()}catch(e){err(e)}};
 window.setTab=t=>{tab=t;render()};
-function render(){if(!me)return;
+// Current week = Tuesday-to-Monday NFL weeks counted from the Tuesday before Week 1
+const curWeek=()=>Math.max(1,Math.floor((Date.now()-new Date("2026-09-08T00:00:00-04:00"))/(7*864e5))+1);
+function render(){if(!me)return;week=curWeek();
   let h=`<nav>${[["standings","Standings"],["picks","Picks"],["history","History"]].map(([k,v])=>`<button class="${tab===k?"on":""}" onclick="setTab('${k}')">${v}</button>`).join("")}</nav>`;
   if(tab==="standings"){const r=Object.entries(totals()).sort((a,b)=>b[1]-a[1]);
     h+=r.map(([n,p],i)=>`<div class="card row"><div><div class="mu">${['🥇','🥈','🥉'][r.findIndex(x=>x[1]===p)]||'#'+(i+1)}</div><b>${esc(n)}</b></div><div class="big">${p}</div></div>`).join("")+liveGrid()}
@@ -101,6 +103,6 @@ onAuthStateChanged(auth,u=>{me=u;$("#out").hidden=!u;
   setDoc(doc(db,"users",u.uid),{name:u.displayName||u.email});
   onSnapshot(collection(db,"users"),s=>{s.docs.forEach(d=>names[d.id]=d.data().name);render()},err);
   onSnapshot(collection(db,"games"),s=>{games=s.docs.map(d=>({id:d.id,...d.data()}));
-    if(games.length){const open=games.filter(g=>!g.completed).map(g=>g.week);week=open.length?Math.min(...open):Math.max(...games.map(g=>g.week))}render()},err);
+    render()},err);
   onSnapshot(collection(db,"picks"),s=>{picks=s.docs.map(d=>d.data());render()},err);setInterval(render,30000)});
 </script></body></html>
